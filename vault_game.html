@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>跳馬チャレンジ</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+JP:wght@400;700;900&display=swap');
+  :root { --mat:#e8c84a; --text:#fff8e8; --good:#4aff8c; --bad:#ff4a4a; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#050512; font-family:'Noto Sans JP',sans-serif;
+    overflow:hidden; height:100vh; width:100vw;
+    display:flex; align-items:center; justify-content:center; user-select:none;
+    -webkit-user-select:none; touch-action:none;
+  }
+  #game-wrap { position:relative; width:min(100vw,720px); height:min(100vh,480px); overflow:hidden; }
+  canvas { display:block; width:100%; height:100%; }
+  #ui { position:absolute; inset:0; pointer-events:none; }
+
+  #top-bar { position:absolute; top:10px; left:0; right:0; display:flex; justify-content:space-between; padding:0 16px; align-items:center; }
+  #score-display { font-family:'Black Han Sans',sans-serif; font-size:2rem; color:var(--mat); text-shadow:0 0 12px #ff6b00aa; }
+  #attempts-display { font-size:0.85rem; color:var(--text); opacity:0.7; }
+
+  #phase-bar { position:absolute; top:56px; left:50%; transform:translateX(-50%); display:flex; gap:6px; align-items:center; }
+  .phase-dot { width:10px; height:10px; border-radius:50%; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.3); transition:background 0.2s,transform 0.15s; }
+  .phase-dot.active { background:var(--mat); box-shadow:0 0 8px var(--mat); transform:scale(1.3); }
+  .phase-dot.done   { background:var(--good); }
+  .phase-dot.miss   { background:var(--bad); }
+  .phase-label { font-size:0.65rem; color:rgba(255,255,255,0.5); letter-spacing:0.08em; margin:0 3px; }
+
+  #run-meter-wrap { position:absolute; bottom:90px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:6px; opacity:0; transition:opacity 0.2s; }
+  #run-meter-wrap.visible { opacity:1; }
+  #run-meter-label { font-size:0.7rem; color:var(--text); letter-spacing:0.12em; opacity:0.85; }
+  #run-meter-outer { width:220px; height:24px; border:2px solid rgba(255,255,255,0.3); border-radius:12px; overflow:hidden; background:rgba(0,0,0,0.4); }
+  #run-meter-fill { height:100%; width:0%; background:linear-gradient(90deg,#4aff8c 0%,#ffe44a 55%,#ff4a4a 100%); border-radius:10px; }
+  #run-meter-sub { font-size:0.65rem; color:rgba(255,255,255,0.5); }
+
+  #meter-wrap { position:absolute; bottom:90px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:4px; opacity:0; transition:opacity 0.2s; }
+  #meter-wrap.visible { opacity:1; }
+  #meter-label { font-size:0.7rem; color:var(--text); letter-spacing:0.12em; opacity:0.85; }
+  #meter-outer { width:200px; height:20px; border:2px solid rgba(255,255,255,0.3); border-radius:10px; overflow:hidden; background:rgba(0,0,0,0.4); position:relative; }
+  #meter-inner { height:100%; width:0%; background:linear-gradient(90deg,#4aff8c,#ffe44a,#ff4a4a); border-radius:8px; position:relative; z-index:2; }
+  #sweet-spot { position:absolute; top:0; bottom:0; background:rgba(255,255,255,0.22); border-left:2px solid rgba(255,255,255,0.9); border-right:2px solid rgba(255,255,255,0.9); z-index:1; }
+  #danger-zone { position:absolute; top:0; bottom:0; right:0; background:rgba(255,60,60,0.28); border-left:2px solid #ff4a4a; display:none; z-index:1; }
+
+  #action-prompt { position:absolute; bottom:52px; left:50%; transform:translateX(-50%); text-align:center; opacity:0; transition:opacity 0.15s; white-space:nowrap; }
+  #action-prompt.visible { opacity:1; }
+  #action-key { display:inline-block; font-family:'Black Han Sans',sans-serif; font-size:1.1rem; color:#000; background:var(--mat); padding:6px 20px; border-radius:6px; box-shadow:0 4px 0 #9e8420,0 0 20px #ff6b0066; animation:pulse-btn 0.6s ease-in-out infinite alternate; }
+  @keyframes pulse-btn { from{transform:scale(1);}to{transform:scale(1.06);} }
+  #action-sub { font-size:0.65rem; color:rgba(255,255,255,0.55); margin-top:5px; line-height:1.5; }
+
+  #result-popup { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(0.5); text-align:center; pointer-events:all; opacity:0; transition:opacity 0.2s,transform 0.25s cubic-bezier(0.34,1.56,0.64,1); z-index:10; background:rgba(5,5,18,0.94); border:1px solid rgba(255,255,255,0.15); border-radius:16px; padding:22px 30px; }
+  #result-popup.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  #result-title { font-family:'Black Han Sans',sans-serif; font-size:2.8rem; line-height:1; text-shadow:0 4px 20px currentColor; }
+  #result-score { font-family:'Black Han Sans',sans-serif; font-size:1.5rem; margin-top:6px; }
+  #result-detail { font-size:0.75rem; opacity:0.7; margin-top:6px; line-height:1.8; white-space:pre-line; }
+  #result-btn { margin-top:14px; padding:10px 32px; font-family:'Noto Sans JP',sans-serif; font-weight:900; font-size:1rem; background:var(--mat); color:#000; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 0 #9e8420; pointer-events:all; }
+
+  #title-screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(160deg,#0a0a1a 0%,#1a0a00 100%); z-index:30; gap:12px; pointer-events:all; }
+  #title-main { font-family:'Black Han Sans',sans-serif; font-size:3rem; color:var(--mat); text-shadow:0 0 30px #ff6b00aa; }
+  #title-sub { font-size:0.8rem; color:rgba(255,255,255,0.5); letter-spacing:0.2em; }
+  #title-desc { font-size:0.78rem; color:rgba(255,255,255,0.75); text-align:center; line-height:1.9; max-width:300px; background:rgba(255,255,255,0.06); padding:12px 18px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); }
+  #start-btn { padding:12px 40px; font-family:'Noto Sans JP',sans-serif; font-weight:900; font-size:1.1rem; background:var(--mat); color:#000; border:none; border-radius:8px; cursor:pointer; box-shadow:0 5px 0 #9e8420,0 0 30px #ff6b0066; margin-top:8px; pointer-events:all; -webkit-appearance:none; }
+
+  .feedback-flash { position:absolute; font-family:'Black Han Sans',sans-serif; font-size:1.5rem; pointer-events:none; transform:translate(-50%,-50%); animation:ff 0.9s forwards; }
+  @keyframes ff { 0%{opacity:1;transform:translate(-50%,-50%) scale(0.7);}40%{opacity:1;transform:translate(-50%,-90%) scale(1.15);}100%{opacity:0;transform:translate(-50%,-160%) scale(1.05);} }
+</style>
+</head>
+<body>
+<div id="game-wrap">
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div id="top-bar">
+      <div id="score-display">0.000</div>
+      <div id="attempts-display">試技 1/3</div>
+    </div>
+    <div id="phase-bar">
+      <span class="phase-label">助走</span>
+      <div class="phase-dot" id="pd0"></div>
+      <div class="phase-dot" id="pd1"></div>
+      <span class="phase-label">着手</span>
+      <div class="phase-dot" id="pd2"></div>
+      <div class="phase-dot" id="pd3"></div>
+      <span class="phase-label">着地</span>
+    </div>
+    <div id="run-meter-wrap">
+      <div id="run-meter-label">⚡ SPEED CHARGE</div>
+      <div id="run-meter-outer"><div id="run-meter-fill"></div></div>
+      <div id="run-meter-sub">長押しで加速 → 離してダッシュ！</div>
+    </div>
+    <div id="meter-wrap">
+      <div id="meter-label">TIMING</div>
+      <div id="meter-outer">
+        <div id="sweet-spot"></div>
+        <div id="danger-zone"></div>
+        <div id="meter-inner"></div>
+      </div>
+    </div>
+    <div id="action-prompt">
+      <div id="action-key">タップ / スペース</div>
+      <div id="action-sub"></div>
+    </div>
+    <div id="result-popup">
+      <div id="result-title"></div>
+      <div id="result-score"></div>
+      <div id="result-detail"></div>
+      <button id="result-btn">もう一度</button>
+    </div>
+  </div>
+  <div id="title-screen">
+    <div id="title-main">🤸 跳馬</div>
+    <div id="title-sub">VAULT CHALLENGE</div>
+    <div id="title-desc">
+      🏃 <b>助走</b>：長押しで加速 → 離してダッシュ！<br>
+      🦵 <b>ロイター板</b>：タイミング逃すと激突MISS<br>
+      🤲 <b>着手</b>：遅すぎると0点のまま着地へ<br>
+      🎯 <b>着地</b>：ピタリ止まれ！<br><br>
+      速く踏み切るほど高得点！
+    </div>
+    <button id="start-btn">スタート</button>
+  </div>
+</div>
+
+<script>
+// ── ROUNDED RECT ──────────────────────────────────────
+function rrect(ctx, x, y, w, h, r) {
+  var R = Array.isArray(r) ? r : [r,r,r,r];
+  var tl=R[0]||0,tr=R[1]||0,br=R[2]||0,bl=R[3]||0;
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y); ctx.lineTo(x+w-tr,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+tr);
+  ctx.lineTo(x+w,y+h-br); ctx.quadraticCurveTo(x+w,y+h,x+w-br,y+h);
+  ctx.lineTo(x+bl,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-bl);
+  ctx.lineTo(x,y+tl); ctx.quadraticCurveTo(x,y,x+tl,y);
+  ctx.closePath();
+}
+
+// ── CANVAS ────────────────────────────────────────────
+var canvas = document.getElementById('c');
+var ctx    = canvas.getContext('2d');
+var wrap   = document.getElementById('game-wrap');
+var W=720, H=480;
+function resize(){
+  var r=wrap.getBoundingClientRect();
+  canvas.width=Math.floor(r.width); canvas.height=Math.floor(r.height);
+  W=canvas.width; H=canvas.height;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── WORLD ─────────────────────────────────────────────
+var WORLD_W = 1800;
+var camX = 0;
+var W_START, W_SPRING, W_VAULT, W_LAND;
+function gY(){ return Math.floor(H*0.72); }
+
+// ── STARS ─────────────────────────────────────────────
+var STARS=[];
+for(var _i=0;_i<80;_i++) STARS.push({
+  wx:Math.random()*WORLD_W, wy:Math.random()*260,
+  r:Math.random()*1.2+0.3, a:Math.random()*0.7+0.2, tw:Math.random()*Math.PI*2
+});
+
+// ── GAME STATE ────────────────────────────────────────
+var MAX_ATT=3;
+var attempt=1, totalScore=0;
+var bestScore=0;
+try{ bestScore=parseFloat(localStorage.getItem('vb4')||'0')||0; }catch(e){}
+
+// state: 'idle'|'charge'|'running'|'crash'|'landed'|'result'
+var state='idle';
+var phase=0;  // 0=none,1=ran,2=sprang,3=contacted,4=landed
+var scores={ run:0, spring:0, contact:0, land:0 };
+var particles=[];
+
+// ── ATHLETE ───────────────────────────────────────────
+var ath={ wx:80, wy:0, vx:0, vy:0, pose:'idle', rotation:0, trail:[] };
+
+function initAth(){
+  W_START  = 80;
+  W_SPRING = WORLD_W*0.38;
+  W_VAULT  = WORLD_W*0.48;
+  W_LAND   = WORLD_W*0.60;
+  ath.wx=W_START; ath.wy=gY();
+  ath.vx=0; ath.vy=0; ath.pose='idle'; ath.rotation=0; ath.trail=[];
+  camX=0;
+}
+
+// ── RUN CHARGE ────────────────────────────────────────
+var charge=0, runSpd=0, holding=false;
+var CHARGE_RATE=0.55;
+
+// ── CONTINUOUS PHYSICS STATE ──────────────────────────
+// After run: athlete moves automatically all the way through
+// Phases triggered by position, not by meter
+// Player taps at the right MOMENT (position-based timing)
+
+// Timing windows (world-x ranges) for each event
+// Best = exact center, score drops off linearly away from center
+var TAP = {
+  spring:  { center:0, half:0 },  // set in initAth
+  contact: { center:0, half:0 },
+  land:    { center:0, half:0 }
+};
+
+// Whether each tap event has already been resolved
+var tapped = { spring:false, contact:false, land:false };
+var landTapWx = -1; // wx when player tapped land (set on tap, scored on actual landing)
+// Score stored per event (-1=missed window entirely, 0..1=score)
+// tap_score is raw position-based score when player tapped
+// If player never taps, we score by how far past they went (MISS)
+
+// Running physics
+var runVx=0;  // horizontal speed during run/flight
+
+// Flight arc state
+var inFlight=false;
+var inFlight2=false; // second arc after vault contact
+
+// Post-land wobble timer
+var landedT=0;
+
+// ── PROMPT STATE (always visible after run starts) ────
+var promptPhase='spring'; // 'spring'|'contact'|'land'|'none'
+var PROMPT_HINTS={
+  spring:  '🦵 ロイター板でタップ！',
+  contact: '🤲 着手のタイミングでタップ！',
+  land:    '🎯 着地でタップ！',
+  none:    ''
+};
+
+function showPrompt(ph){
+  promptPhase=ph;
+  var el=document.getElementById('action-prompt');
+  var key=document.getElementById('action-key');
+  var sub=document.getElementById('action-sub');
+  if(ph==='none'){ el.classList.remove('visible'); return; }
+  key.textContent='タップ / スペース';
+  sub.textContent=PROMPT_HINTS[ph];
+  el.classList.add('visible');
+}
+
+// ── SCORING HELPERS ───────────────────────────────────
+// score from 0..1 based on how close wx is to target center
+// half = half-window size (full window = 2*half)
+// outside window → 0 (MISS)
+// MISS penalty zone (too late): beyond center+half*1.5 → crash/0
+
+function posScore(wx, center, half){
+  var dist=Math.abs(wx-center);
+  if(dist>half*2.0) return -1;   // completely missed
+  if(dist<=half)    return 1.0-0.3*(dist/half);  // in sweet zone
+  return Math.max(0, 0.7-0.7*((dist-half)/half)); // outer zone
+}
+
+function gradeOf(s){
+  if(s<0)     return{l:'MISS',   c:'#ff4a4a'};
+  if(s>=0.95) return{l:'PERFECT',c:'#ffe44a'};
+  if(s>=0.80) return{l:'GREAT',  c:'#4aff8c'};
+  if(s>=0.60) return{l:'GOOD',   c:'#4ac8ff'};
+  if(s>=0.35) return{l:'OK',     c:'#ff9944'};
+  return           {l:'MISS',   c:'#ff4a4a'};
+}
+
+// ── FEEDBACK ──────────────────────────────────────────
+function flash(label,color,sx,sy){
+  var el=document.createElement('div');
+  el.className='feedback-flash';
+  el.textContent=label; el.style.color=color;
+  el.style.textShadow='0 0 16px '+color;
+  el.style.left=Math.max(40,Math.min(sx,W-60))+'px';
+  el.style.top =Math.max(60,Math.min(sy,H-40))+'px';
+  document.getElementById('ui').appendChild(el);
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },950);
+}
+
+function burst(sx,sy,color,n){
+  n=n||12;
+  for(var i=0;i<n;i++){
+    var a=Math.random()*Math.PI*2, s=Math.random()*4+1;
+    particles.push({x:sx,y:sy,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,
+      life:1,decay:0.025+Math.random()*0.03,r:Math.random()*5+2,color:color});
+  }
+}
+
+// ── DOTS ──────────────────────────────────────────────
+function updateDots(){
+  var miss1=(scores.spring===0&&phase>1);
+  var miss2=(scores.contact===0&&phase>2);
+  for(var i=0;i<4;i++){
+    var d=document.getElementById('pd'+i);
+    d.className='phase-dot';
+    if((i===1&&miss1)||(i===2&&miss2)) d.classList.add('miss');
+    else if(i<phase) d.classList.add('done');
+    else if(i===phase) d.classList.add('active');
+  }
+}
+
+// ── PLAYER TAP (position-based) ───────────────────────
+function doTap(){
+  var sx=ath.wx-camX, sy=ath.wy;
+
+  if(state==='running'||state==='charge') return; // ignore during run/charge phase
+
+  // Spring tap
+  if(!tapped.spring && state==='running_full'){
+    resolveTap('spring', sx, sy);
+    return;
+  }
+  // The state 'running_full' handles all three in sequence
+  if(state==='running_full'){
+    if(!tapped.spring){ resolveTap('spring',sx,sy); }
+    else if(!tapped.contact){ resolveTap('contact',sx,sy); }
+    else if(!tapped.land){ resolveTap('land',sx,sy); }
+  }
+}
+
+function resolveTap(event, sx, sy){
+  if(tapped[event]) return;
+  tapped[event]=true;
+  var c=TAP[event];
+  var s=posScore(ath.wx, c.center, c.half);
+  scores[event]=Math.max(0,s);
+
+  // land feedback is shown at actual ground contact, not here
+  if(event!=='land'){
+    var g=gradeOf(s);
+    flash(g.l,g.c,sx,sy-55);
+    if(s>=0.6) burst(sx,sy,g.c,Math.floor(s*14));
+  }
+
+  if(event==='spring'){
+    phase=2; updateDots();
+    if(s<0 && ath.wx>W_VAULT-20){ doCrash(); return; }
+    showPrompt('contact');
+  } else if(event==='contact'){
+    phase=3; updateDots();
+    showPrompt('land');
+  } else if(event==='land'){
+    // Don't score yet - record tap position, score on actual ground contact
+    landTapWx=ath.wx;
+    scores.land=0; // placeholder until landing
+    phase=4; updateDots();
+    showPrompt('none');
+    // Don't end here - let physics continue to landing
+  }
+}
+
+function doCrash(){
+  state='crash';
+  showPrompt('none');
+  scores.spring=0;
+  phase=2; updateDots();
+  ath.vx=0.5; ath.vy=-2;
+  ath.pose='crash';
+  setTimeout(showResult,1600);
+}
+
+// ── RESULT ────────────────────────────────────────────
+function showResult(){
+  // Auto-score any untapped events as MISS
+  if(!tapped.spring){ scores.spring=0; phase=Math.max(phase,2); }
+  if(!tapped.contact){ scores.contact=0; phase=Math.max(phase,3); }
+  if(!tapped.land){ scores.land=0; phase=Math.max(phase,4); }
+  updateDots();
+
+  var w={run:1.5,spring:2.5,contact:2.5,land:3.5};
+  var wsum=10;
+  var raw=scores.run*w.run+scores.spring*w.spring+scores.contact*w.contact+scores.land*w.land;
+  var sc=Math.min(10,raw/wsum*10);
+  var rounded=Math.round(sc*1000)/1000;
+  totalScore+=rounded;
+  document.getElementById('score-display').textContent=(totalScore/attempt).toFixed(3);
+
+  var g=gradeOf(sc/10);
+  document.getElementById('result-title').textContent=g.l;
+  document.getElementById('result-title').style.color=g.c;
+  document.getElementById('result-score').textContent=rounded.toFixed(3)+' 点';
+  document.getElementById('result-score').style.color=g.c;
+
+  function gl(v){ return v<=0?'MISS':gradeOf(v).l; }
+  document.getElementById('result-detail').textContent=
+    '助走速度: '+Math.round(scores.run*100)+'%  ロイター板: '+gl(scores.spring)+'\n'+
+    '着手: '+gl(scores.contact)+'  着地: '+gl(scores.land);
+
+  if(attempt>=MAX_ATT){
+    var avg=totalScore/MAX_ATT, fg=gradeOf(avg/10);
+    document.getElementById('result-title').textContent=fg.l;
+    document.getElementById('result-title').style.color=fg.c;
+    document.getElementById('result-score').textContent='最終スコア: '+avg.toFixed(3)+' 点';
+    document.getElementById('result-btn').textContent='最初から';
+    if(avg>bestScore){ bestScore=avg; try{localStorage.setItem('vb4',avg.toFixed(3));}catch(e){} }
+  } else {
+    document.getElementById('result-btn').textContent='次の試技 ('+(attempt+1)+'/'+MAX_ATT+')';
+  }
+  document.getElementById('result-popup').classList.add('show');
+  state='result';
+}
+
+function doNextAttempt(){
+  if(state!=='result') return;
+  document.getElementById('result-popup').classList.remove('show');
+  if(attempt>=MAX_ATT){ attempt=1; totalScore=0; document.getElementById('score-display').textContent='0.000'; }
+  else attempt++;
+  document.getElementById('attempts-display').textContent='試技 '+attempt+'/'+MAX_ATT;
+  startAttempt();
+}
+var resultBtn=document.getElementById('result-btn');
+resultBtn.addEventListener('click',doNextAttempt,false);
+resultBtn.addEventListener('touchend',function(e){e.preventDefault();e.stopPropagation();doNextAttempt();},false);
+
+// ── START ATTEMPT ─────────────────────────────────────
+function startAttempt(){
+  phase=0; scores={run:0,spring:0,contact:0,land:0};
+  tapped={spring:false,contact:false,land:false};
+  landTapWx=-1; inFlight2=false;
+  particles=[]; charge=0; runSpd=0; holding=false;
+  keyHeld=false; touchHeld=false; inFlight=false; landedT=0;
+  showPrompt('none');
+  document.getElementById('meter-wrap').classList.remove('visible');
+  document.getElementById('run-meter-wrap').classList.remove('visible');
+  initAth(); updateDots(); state='charge';
+
+  setTimeout(function(){
+    if(state!=='charge') return;
+    document.getElementById('run-meter-wrap').classList.add('visible');
+    document.getElementById('action-prompt').classList.add('visible');
+    document.getElementById('action-key').textContent='長押し → 離す！';
+    document.getElementById('action-sub').textContent='長く押すほど速くなる！';
+  },500);
+}
+
+// ── INPUT ─────────────────────────────────────────────
+var keyHeld=false, touchHeld=false;
+
+function onDown(e){
+  if(state==='idle') return;
+  if(e.type==='keydown'&&e.code!=='Space') return;
+  if(e.cancelable) e.preventDefault();
+  if(e.type==='keydown') keyHeld=true; else touchHeld=true;
+
+  if(state==='charge'){
+    holding=true;
+  } else if(state==='running_full'){
+    // tap for spring / contact / land
+    var sx=ath.wx-camX, sy=ath.wy;
+    if(!tapped.spring){ resolveTap('spring',sx,sy); }
+    else if(!tapped.contact){ resolveTap('contact',sx,sy); }
+    else if(!tapped.land){ resolveTap('land',sx,sy); }
+  }
+}
+
+function onUp(e){
+  if(state==='idle') return;
+  if(e.type==='keyup'&&e.code!=='Space') return;
+  if(e.type==='keyup') keyHeld=false; else touchHeld=false;
+
+  if(state==='charge'&&holding){
+    holding=false;
+    runSpd=charge; charge=0;
+    document.getElementById('run-meter-wrap').classList.remove('visible');
+    document.getElementById('action-prompt').classList.remove('visible');
+    phase=1; updateDots(); scores.run=runSpd;
+    // Set timing windows based on run speed
+    // Faster run = tighter windows
+    var hw_spring  = 55 + (1-runSpd)*30;   // world-unit half-window
+    var hw_contact = 45 + (1-runSpd)*25;
+    var hw_land    = 60 + (1-runSpd)*30;
+    TAP.spring  ={ center:W_SPRING, half:hw_spring  };
+    TAP.contact ={ center:W_VAULT,  half:hw_contact };
+    TAP.land    ={ center:0, half:hw_land }; // center set dynamically on landing
+    // Start autonomous run
+    runVx = 3 + runSpd * 8;
+    state='running_full';
+    showPrompt('spring');
+  }
+}
+
+document.addEventListener('keydown',    onDown, false);
+document.addEventListener('keyup',      onUp,   false);
+document.addEventListener('touchstart', onDown, {passive:false});
+document.addEventListener('touchend', function(e){
+  if(e.target&&(e.target.tagName==='BUTTON')) return;
+  onUp(e);
+},{passive:false});
+document.addEventListener('touchcancel',onUp,{passive:false});
+
+// ── UPDATE ────────────────────────────────────────────
+var lastT=0, animT=0;
+
+function update(ts){
+  var dt=Math.min((ts-lastT)/16.67,3); lastT=ts;
+  animT+=0.016*dt;
+  var gy=gY();
+
+  if(state==='charge'){
+    if(keyHeld||touchHeld||holding) charge=Math.min(1,charge+CHARGE_RATE*0.016*dt);
+    document.getElementById('run-meter-fill').style.width=(charge*100)+'%';
+    ath.wx+=0.3*dt; ath.pose='idle';
+
+  } else if(state==='running_full'){
+    // Continuous autonomous movement
+    var GRAV=0.5;
+
+    if(!inFlight){
+      // On ground: running toward spring, then vault, then land
+      ath.wx+=runVx*dt;
+      ath.pose='run';
+      ath.trail.push({wx:ath.wx,wy:ath.wy});
+      if(ath.trail.length>12) ath.trail.shift();
+
+      // At spring: auto-launch if player hasn't tapped yet (or already tapped)
+      if(ath.wx>=W_SPRING && !inFlight){
+        // Auto-resolve spring if missed (tapped too early = already resolved, or not yet)
+        if(!tapped.spring){
+          // auto MISS if past window
+          if(ath.wx>TAP.spring.center+TAP.spring.half*2.0){
+            tapped.spring=true; scores.spring=0; phase=2; updateDots();
+            showPrompt('contact');
+          }
+        }
+        // Launch into flight arc based on spring score (or 0 if missed)
+        if(tapped.spring || ath.wx>TAP.spring.center+TAP.spring.half*2.0){
+          inFlight=true;
+          ath.trail=[];
+          var springQ=Math.max(0,scores.spring);
+          // vx keeps running speed, vy launches up
+          ath.vx=runVx*0.85;
+          ath.vy=-(4+runSpd*4+springQ*3);
+          ath.pose='flight';
+        }
+      }
+    } else if(inFlight && !inFlight2){
+      // ── ARC 1: spring → vault contact ──
+      ath.vy+=GRAV*dt;
+      ath.wx+=ath.vx*dt;
+      ath.wy+=ath.vy*dt;
+
+      // Handspring pose near vault
+      if(!tapped.contact && ath.wx>=W_VAULT-35 && ath.wx<=W_VAULT+35 && ath.wy<gy-15){
+        ath.pose='handspring';
+      } else {
+        ath.pose='flight';
+      }
+      ath.rotation+=0.04*dt;
+
+      // Auto-resolve contact if window missed
+      if(!tapped.contact && ath.wx>TAP.contact.center+TAP.contact.half*2.0){
+        tapped.contact=true; scores.contact=0; phase=3; updateDots();
+        showPrompt('land');
+      }
+
+      // Vault contact trigger: when ath passes vault X and is near top
+      if(ath.wx>=W_VAULT && !inFlight2){
+        // Transition to arc 2 (post-vault)
+        inFlight2=true;
+        var contactQ=Math.max(0, scores.contact);
+        // Strong upward kick off vault - higher than arc1
+        var vaultKickUp = 8 + runSpd*5 + contactQ*4;
+        ath.vy = -vaultKickUp;
+        ath.vx = runVx * 0.6 + contactQ * 1.5;
+        ath.pose='flight';
+        ath.rotation=0;
+      }
+
+    } else if(inFlight2){
+      // ── ARC 2: post-vault → landing ──
+      ath.vy+=GRAV*dt;
+      ath.wx+=ath.vx*dt;
+      ath.wy+=ath.vy*dt;
+      ath.rotation+=0.06*dt;
+      ath.pose='flight';
+
+      // Actual ground contact
+      if(ath.wy>=gy){
+        ath.wy=gy; ath.vy=0;
+        ath.rotation=0;
+        inFlight=false; inFlight2=false;
+
+        ath.vx*=0.25;
+        ath.pose='land';
+        var lsx=ath.wx-camX, lsy=ath.wy;
+        burst(lsx,gy,'#ffffff',6);
+
+        if(!tapped.land){
+          // Player never tapped → MISS
+          tapped.land=true; scores.land=0; phase=4; updateDots();
+          showPrompt('none');
+          flash('MISS','#ff4a4a',lsx,lsy-55);
+        } else {
+          // Score: how close was the tap to the actual landing moment
+          // landTapWx = athlete's wx when player tapped
+          // ath.wx    = actual landing wx
+          // Use time-in-flight as the "distance" proxy via wx difference
+          // GENEROUS window: half = 300 world units (~2 seconds of travel)
+          var dist=Math.abs(landTapWx-ath.wx);
+          var hw=300;
+          var ls;
+          if(dist<=hw*0.25)       ls=1.0;              // very close = PERFECT
+          else if(dist<=hw*0.55)  ls=0.85;             // GREAT
+          else if(dist<=hw*0.80)  ls=0.65;             // GOOD
+          else if(dist<=hw)       ls=0.40;             // OK
+          else if(dist<=hw*1.4)   ls=0.15;             // near miss
+          else                    ls=0;                // MISS
+          scores.land=ls;
+          var lg=gradeOf(ls);
+          flash(lg.l,lg.c,lsx,lsy-55);
+          if(ls>=0.4) burst(lsx,lsy,lg.c,Math.floor(ls*14));
+          updateDots();
+        }
+
+        state='landed'; landedT=0;
+        setTimeout(showResult,900);
+      }
+    }
+
+  } else if(state==='landed'){
+    landedT+=dt;
+    ath.pose='land';
+    ath.rotation=0;
+
+  } else if(state==='crash'){
+    ath.vy+=0.5*dt;
+    ath.wx+=ath.vx*dt; ath.wy+=ath.vy*dt;
+    ath.rotation+=0.14*dt;
+    if(ath.wy>=gy){ ath.wy=gy; ath.vx*=0.6; ath.vy=0; }
+    ath.pose='crash';
+  }
+
+  // Camera
+  var targetCam=ath.wx-W*0.33;
+  var maxCam=WORLD_W-W;
+  camX+=(Math.max(0,Math.min(maxCam,targetCam))-camX)*0.12*dt;
+
+  // Particles
+  var alive=[];
+  for(var i=0;i<particles.length;i++){
+    var p=particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life-=p.decay;
+    if(p.life>0) alive.push(p);
+  }
+  particles=alive;
+}
+
+// ── DRAW ──────────────────────────────────────────────
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawBG(); drawTrack(); drawSpringboard(); drawVault(); drawMat();
+  drawParticles(); drawAthlete(); drawHUD();
+}
+
+function drawBG(){
+  var g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#050512'); g.addColorStop(0.6,'#12091a'); g.addColorStop(1,'#1a0e05');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  var t=Date.now()*0.001;
+  for(var i=0;i<STARS.length;i++){
+    var s=STARS[i], sx=s.wx-camX;
+    if(sx<-4||sx>W+4) continue;
+    var sy=s.wy*(H/480);
+    var a=s.a*(0.7+0.3*Math.sin(t*0.8+s.tw));
+    ctx.beginPath(); ctx.arc(sx,sy,s.r,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,248,220,'+a+')'; ctx.fill();
+  }
+}
+
+function drawTrack(){
+  var gy=gY();
+  ctx.fillStyle='#1e1408'; ctx.fillRect(0,gy,W,H-gy);
+  ctx.fillStyle='#2a1c0c'; ctx.fillRect(0,gy,W,8);
+  ctx.fillStyle='#3a2a14'; ctx.fillRect(0,gy+8,W,4);
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  for(var wx=0;wx<WORLD_W;wx+=120){
+    var sx=Math.floor(wx-camX);
+    if(sx<-2||sx>W+2) continue;
+    ctx.fillRect(sx,gy,1,14);
+  }
+}
+
+// Draw timing window indicator on track
+function drawTimingWindow(center, half, color, label){
+  var gy=gY();
+  var lo=center-half, hi=center+half;
+  var sx1=lo-camX, sx2=hi-camX;
+  if(sx2<0||sx1>W) return;
+  sx1=Math.max(sx1,0); sx2=Math.min(sx2,W);
+  ctx.fillStyle=color;
+  ctx.fillRect(sx1, gy-3, sx2-sx1, 3);
+  // center marker
+  var cx=center-camX;
+  if(cx>=0&&cx<=W){
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.fillRect(cx-1,gy-6,2,6);
+    if(label){
+      ctx.font='9px sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(255,255,255,0.6)';
+      ctx.fillText(label,cx,gy-9);
+      ctx.textAlign='left';
+    }
+  }
+}
+
+function drawSpringboard(){
+  var gy=gY(), sx=W_SPRING-camX;
+  if(sx<-60||sx>W+60) return;
+  // Glow if this is next target
+  if(!tapped.spring && state==='running_full' && ath.wx<W_SPRING+50){
+    ctx.shadowColor='#ffe44a'; ctx.shadowBlur=12;
+  }
+  var bw=40, bh=18;
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(sx-2,gy+2,bw+4,6);
+  var bg=ctx.createLinearGradient(sx,gy-bh,sx,gy);
+  bg.addColorStop(0,'#e8d878'); bg.addColorStop(1,'#b8a040');
+  ctx.fillStyle=bg;
+  ctx.beginPath();
+  ctx.moveTo(sx,gy); ctx.lineTo(sx+bw,gy);
+  ctx.lineTo(sx+bw-4,gy-bh); ctx.lineTo(sx+4,gy-bh*0.45);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(sx+8,gy-2); ctx.lineTo(sx+bw-6,gy-bh+2); ctx.stroke();
+  ctx.shadowBlur=0;
+}
+
+function drawVault(){
+  var gy=gY(), sx=W_VAULT-camX;
+  if(sx<-70||sx>W+70) return;
+  if(!tapped.contact && tapped.spring && state==='running_full'){
+    ctx.shadowColor='#4ac8ff'; ctx.shadowBlur=12;
+  }
+  var vw=52,vh=82,x=sx-vw/2,y=gy-vh;
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(sx,gy+4,vw*0.65,8,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#8a6030';
+  ctx.fillRect(x+6,gy-22,9,22); ctx.fillRect(x+vw-15,gy-22,9,22);
+  var vg=ctx.createLinearGradient(x,y,x+vw,y+vh);
+  vg.addColorStop(0,'#e06030'); vg.addColorStop(0.5,'#d4441a'); vg.addColorStop(1,'#8a2808');
+  ctx.fillStyle=vg; rrect(ctx,x,y,vw,vh*0.80,[6,6,2,2]); ctx.fill();
+  var tg=ctx.createLinearGradient(x,y,x+vw,y+20);
+  tg.addColorStop(0,'#f2f2f2'); tg.addColorStop(1,'#c0c0c0');
+  ctx.fillStyle=tg; rrect(ctx,x-4,y-5,vw+8,22,7); ctx.fill();
+  ctx.strokeStyle='rgba(150,100,70,0.35)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(sx,y); ctx.lineTo(sx,gy-22); ctx.stroke();
+}
+
+function drawMat(){
+  var gy=gY(), sx=W_LAND-camX, mw=W*0.20;
+  if(sx>W||sx+mw<0) return;
+  if(!tapped.land && tapped.contact && state==='running_full'){
+    ctx.shadowColor='#4aff8c'; ctx.shadowBlur=14;
+  }
+  var g=ctx.createLinearGradient(sx,gy-8,sx,gy+8);
+  g.addColorStop(0,'#5c8a3a'); g.addColorStop(1,'#2e4a1e');
+  ctx.fillStyle=g; rrect(ctx,sx,gy-7,mw,18,5); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5;
+  var frac=[0.3,0.7];
+  for(var fi=0;fi<2;fi++){
+    ctx.beginPath(); ctx.moveTo(sx+mw*frac[fi],gy-7); ctx.lineTo(sx+mw*frac[fi],gy+11); ctx.stroke();
+  }
+}
+
+function drawParticles(){
+  for(var i=0;i<particles.length;i++){
+    var p=particles[i];
+    ctx.globalAlpha=p.life; ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawAthlete(){
+  var sx=ath.wx-camX, sy=ath.wy;
+  for(var ti=0;ti<ath.trail.length;ti++){
+    var tr=ath.trail[ti];
+    var ta=(ti/ath.trail.length)*0.18;
+    ctx.globalAlpha=ta; ctx.fillStyle='#ff8844';
+    ctx.beginPath(); ctx.arc(tr.wx-camX,tr.wy,5,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.save();
+  ctx.translate(sx,sy);
+  ctx.rotate(ath.rotation);
+  var sc=Math.min(W,H)/480*0.95;
+  ctx.scale(sc,sc);
+  ctx.strokeStyle='#fff8e8'; ctx.lineWidth=3.5; ctx.lineCap='round'; ctx.lineJoin='round';
+  var t=animT, pose=ath.pose;
+  if(pose==='idle'||pose==='run'){
+    var sw=Math.sin(t*(pose==='run'?14:4))*(pose==='run'?20:4);
+    var bo=pose==='run'?Math.abs(Math.sin(t*14))*3:0;
+    ctx.beginPath(); ctx.arc(0,-38+bo,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-31+bo); ctx.lineTo(0,-12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-12); ctx.lineTo(sw*0.6,5); ctx.lineTo(sw*0.4+5,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-12); ctx.lineTo(-sw*0.6,5); ctx.lineTo(-sw*0.4-5,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-28+bo); ctx.lineTo(-sw*0.6,-16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-28+bo); ctx.lineTo(sw*0.6,-16); ctx.stroke();
+  } else if(pose==='flight'){
+    ctx.beginPath(); ctx.arc(0,-20,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-13); ctx.lineTo(0,8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(10,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(-10,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-4); ctx.lineTo(22,-1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-4); ctx.lineTo(-22,-1); ctx.stroke();
+  } else if(pose==='handspring'){
+    ctx.beginPath(); ctx.arc(0,-6,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,1); ctx.lineTo(0,14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(-17,5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(17,5); ctx.stroke();
+    var lv=Math.sin(t*6)*6;
+    ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(-8+lv,-6); ctx.lineTo(-4+lv,-22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(8-lv,-6); ctx.lineTo(4-lv,-22); ctx.stroke();
+  } else if(pose==='land'){
+    var bn=Math.max(0,0.8-animT*0.5)*9;
+    ctx.beginPath(); ctx.arc(0,-28,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-21); ctx.lineTo(0,-6+bn); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-6+bn); ctx.lineTo(11+bn*0.5,7+bn); ctx.lineTo(8,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-6+bn); ctx.lineTo(-11-bn*0.5,7+bn); ctx.lineTo(-8,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(16,-22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(-16,-22); ctx.stroke();
+  } else if(pose==='crash'){
+    ctx.beginPath(); ctx.arc(5,-8,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,-1); ctx.lineTo(0,14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(-14,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(14,20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,-1); ctx.lineTo(-16,6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,-1); ctx.lineTo(18,-6); ctx.stroke();
+    ctx.restore(); ctx.save();
+    ctx.font='20px sans-serif'; ctx.fillStyle='#ffee44';
+    ctx.fillText('💫',sx-28,sy-28);
+    ctx.restore(); return;
+  }
+  ctx.restore();
+}
+
+function drawHUD(){
+  if(bestScore>0){
+    ctx.font='11px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.3)';
+    ctx.textAlign='right'; ctx.fillText('BEST: '+bestScore.toFixed(3),W-14,24); ctx.textAlign='left';
+  }
+  // Speed display during charge/run
+  if(state==='charge'){
+    var pct=Math.round(charge*100);
+    ctx.font='bold 13px sans-serif';
+    ctx.fillStyle='rgba(255,220,80,0.9)';
+    ctx.textAlign='center'; ctx.fillText('CHARGE '+pct+'%',W/2,gY()-20); ctx.textAlign='left';
+  } else if(state==='running_full'){
+    var pct2=Math.round(runSpd*100);
+    var rv=Math.min(255,pct2*2), gv2=Math.max(100,200-pct2);
+    ctx.font='bold 13px sans-serif';
+    ctx.fillStyle='rgba('+rv+','+gv2+',80,0.85)';
+    ctx.textAlign='center'; ctx.fillText('SPEED '+pct2+'%',W/2,gY()-20); ctx.textAlign='left';
+  }
+}
+
+// ── LOOP ──────────────────────────────────────────────
+function loop(ts){
+  if(state!=='idle'&&state!=='result') update(ts); else lastT=ts;
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ── TITLE ─────────────────────────────────────────────
+function doStart(){
+  var ts=document.getElementById('title-screen');
+  if(!ts||ts.style.display==='none') return;
+  ts.style.display='none';
+  attempt=1; totalScore=0;
+  document.getElementById('score-display').textContent='0.000';
+  document.getElementById('attempts-display').textContent='試技 1/'+MAX_ATT;
+  startAttempt();
+}
+var startBtn=document.getElementById('start-btn');
+startBtn.addEventListener('click',doStart,false);
+startBtn.addEventListener('touchend',function(e){e.preventDefault();doStart();},false);
+
+// Safe pre-init
+W_START=80; W_SPRING=720; W_VAULT=900; W_LAND=1116;
+ath.wy=gY();
+
+requestAnimationFrame(function(ts){ lastT=ts; loop(ts); });
+</script>
+</body>
+</html>
